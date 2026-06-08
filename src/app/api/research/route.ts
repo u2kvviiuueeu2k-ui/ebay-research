@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchItemsByKeyword, EbayCompletedItem } from "@/lib/ebay";
 import { ResearchResult, ProductPattern } from "@/types";
+import { extractModelQuery } from "@/lib/utils";
 
 const EXCHANGE_RATE = 150;
 
@@ -14,9 +15,10 @@ function calcProfit(ebayPriceUSD: number, sourcePriceJPY: number) {
   return { ebayPrice: ebayPriceUSD, sourcePrice: sourcePriceJPY, ebayFeeRate, ebayFee, shippingCost, profit, profitRate };
 }
 
-function toResult(item: EbayCompletedItem, pattern: ProductPattern, soldCount: number, soldPeriodDays: number, keyword: string): ResearchResult {
+function toResult(item: EbayCompletedItem, pattern: ProductPattern, soldCount: number, soldPeriodDays: number): ResearchResult {
   const ebayPrice = parseFloat(item.price.value);
   const estimatedSourceJPY = Math.round(ebayPrice * EXCHANGE_RATE * 0.55);
+  const sourceQuery = extractModelQuery(item.title);
 
   return {
     product: {
@@ -34,16 +36,16 @@ function toResult(item: EbayCompletedItem, pattern: ProductPattern, soldCount: n
     sources: [
       {
         platform: "yahoo-auction",
-        title: `${keyword} をヤフオクで探す`,
+        title: `${sourceQuery} をヤフオクで探す`,
         price: estimatedSourceJPY,
-        url: `https://auctions.yahoo.co.jp/search/search?p=${encodeURIComponent(keyword)}`,
+        url: `https://auctions.yahoo.co.jp/search/search?p=${encodeURIComponent(sourceQuery)}`,
         imageUrl: "",
       },
       {
         platform: "mercari",
-        title: `${keyword} をメルカリで探す`,
+        title: `${sourceQuery} をメルカリで探す`,
         price: Math.round(estimatedSourceJPY * 0.95),
-        url: `https://jp.mercari.com/search?keyword=${encodeURIComponent(keyword)}`,
+        url: `https://jp.mercari.com/search?keyword=${encodeURIComponent(sourceQuery)}`,
         imageUrl: "",
       },
     ],
@@ -67,21 +69,21 @@ export async function GET(req: NextRequest) {
     const highValue = items.filter((i) => parseFloat(i.price.value) >= 500).slice(0, 3);
     highValue.forEach((item) => {
       seen.add(item.itemId);
-      results.push(toResult(item, "high-value", 1, 365, keyword));
+      results.push(toResult(item, "high-value", 1, 365));
     });
 
     // 高回転: 残りから上位（多く出品されている = 回転が速い傾向）
     const remaining = items.filter((i) => !seen.has(i.itemId));
     remaining.slice(0, 3).forEach((item) => {
       seen.add(item.itemId);
-      results.push(toResult(item, "high-rotation", items.length >= 5 ? 6 : 2, 30, keyword));
+      results.push(toResult(item, "high-rotation", items.length >= 5 ? 6 : 2, 30));
     });
 
     // 定番: さらに残り
     const rest = items.filter((i) => !seen.has(i.itemId));
     rest.slice(0, 3).forEach((item) => {
       seen.add(item.itemId);
-      results.push(toResult(item, "standard", 2, 90, keyword));
+      results.push(toResult(item, "standard", 2, 90));
     });
 
     return NextResponse.json({ results, total: items.length });
