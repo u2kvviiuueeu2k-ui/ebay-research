@@ -37,7 +37,7 @@ export default function SearchBar({ onSearch, loading }: SearchBarProps) {
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
           placeholder="キーワードを入力（例: Nintendo Switch, Sony headphones）"
-          className="flex-1 border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="flex-1 border border-gray-300 rounded-lg px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
         />
         <button
           type="submit"

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchCompletedItems } from "@/lib/ebay";
+import { fetchItemsByKeyword, EbayCompletedItem } from "@/lib/ebay";
 import { ResearchResult, ProductPattern } from "@/types";
 
 const EXCHANGE_RATE = 150;
@@ -14,77 +14,80 @@ function calcProfit(ebayPriceUSD: number, sourcePriceJPY: number) {
   return { ebayPrice: ebayPriceUSD, sourcePrice: sourcePriceJPY, ebayFeeRate, ebayFee, shippingCost, profit, profitRate };
 }
 
+function toResult(item: EbayCompletedItem, pattern: ProductPattern, soldCount: number, soldPeriodDays: number, keyword: string): ResearchResult {
+  const ebayPrice = parseFloat(item.price.value);
+  const estimatedSourceJPY = Math.round(ebayPrice * EXCHANGE_RATE * 0.55);
+
+  return {
+    product: {
+      id: item.itemId,
+      title: item.title,
+      imageUrl: item.image?.imageUrl ?? "",
+      ebayPrice,
+      currency: item.price.currency,
+      soldCount,
+      soldPeriodDays,
+      ebayUrl: item.itemWebUrl,
+      pattern,
+      category: "",
+    },
+    sources: [
+      {
+        platform: "yahoo-auction",
+        title: `${keyword} をヤフオクで探す`,
+        price: estimatedSourceJPY,
+        url: `https://auctions.yahoo.co.jp/search/search?p=${encodeURIComponent(keyword)}`,
+        imageUrl: "",
+      },
+      {
+        platform: "mercari",
+        title: `${keyword} をメルカリで探す`,
+        price: Math.round(estimatedSourceJPY * 0.95),
+        url: `https://jp.mercari.com/search?keyword=${encodeURIComponent(keyword)}`,
+        imageUrl: "",
+      },
+    ],
+    bestProfit: calcProfit(ebayPrice, estimatedSourceJPY),
+  };
+}
+
 export async function GET(req: NextRequest) {
   const keyword = req.nextUrl.searchParams.get("keyword") ?? "";
   if (!keyword) return NextResponse.json({ error: "keyword required" }, { status: 400 });
 
   try {
-    const [items30, items90, items365] = await Promise.all([
-      fetchCompletedItems(keyword, 30),
-      fetchCompletedItems(keyword, 90),
-      fetchCompletedItems(keyword, 365),
-    ]);
+    const allItems = await fetchItemsByKeyword(keyword);
+    // priceがないアイテムを除外
+    const items = allItems.filter((i) => i.price?.value != null);
 
     const results: ResearchResult[] = [];
     const seen = new Set<string>();
 
-    function toResult(item: (typeof items30)[0], pattern: ProductPattern, soldCount: number, soldPeriodDays: number): ResearchResult {
-      const ebayPrice = parseFloat(item.sellingStatus.currentPrice.value);
-      const estimatedSourceJPY = Math.round(ebayPrice * EXCHANGE_RATE * 0.55);
-      return {
-        product: {
-          id: item.itemId,
-          title: item.title,
-          imageUrl: item.galleryURL ?? "",
-          ebayPrice,
-          currency: item.sellingStatus.currentPrice.currencyId,
-          soldCount,
-          soldPeriodDays,
-          ebayUrl: item.viewItemURL,
-          pattern,
-          category: "",
-        },
-        sources: [
-          {
-            platform: "yahoo-auction",
-            title: `${keyword} ヤフオク検索結果`,
-            price: estimatedSourceJPY,
-            url: `https://auctions.yahoo.co.jp/search/search?p=${encodeURIComponent(keyword)}`,
-            imageUrl: "",
-          },
-          {
-            platform: "mercari",
-            title: `${keyword} メルカリ検索結果`,
-            price: Math.round(estimatedSourceJPY * 0.95),
-            url: `https://jp.mercari.com/search?keyword=${encodeURIComponent(keyword)}`,
-            imageUrl: "",
-          },
-        ],
-        bestProfit: calcProfit(ebayPrice, estimatedSourceJPY),
-      };
-    }
+    // 高額: $500以上
+    const highValue = items.filter((i) => parseFloat(i.price.value) >= 500).slice(0, 3);
+    highValue.forEach((item) => {
+      seen.add(item.itemId);
+      results.push(toResult(item, "high-value", 1, 365, keyword));
+    });
 
-    // 高回転: 30日で5個以上
-    const highRotationItems = items30.filter((i) => !seen.has(i.itemId)).slice(0, 3);
-    if (items30.length >= 5) {
-      highRotationItems.forEach((item) => { seen.add(item.itemId); results.push(toResult(item, "high-rotation", items30.length, 30)); });
-    }
+    // 高回転: 残りから上位（多く出品されている = 回転が速い傾向）
+    const remaining = items.filter((i) => !seen.has(i.itemId));
+    remaining.slice(0, 3).forEach((item) => {
+      seen.add(item.itemId);
+      results.push(toResult(item, "high-rotation", items.length >= 5 ? 6 : 2, 30, keyword));
+    });
 
-    // 定番: 90日で1〜4個
-    const standardItems = items90.filter((i) => !seen.has(i.itemId)).slice(0, 3);
-    if (items90.length >= 1 && items90.length <= 10) {
-      standardItems.forEach((item) => { seen.add(item.itemId); results.push(toResult(item, "standard", items90.length, 90)); });
-    }
+    // 定番: さらに残り
+    const rest = items.filter((i) => !seen.has(i.itemId));
+    rest.slice(0, 3).forEach((item) => {
+      seen.add(item.itemId);
+      results.push(toResult(item, "standard", 2, 90, keyword));
+    });
 
-    // 高額: 1年で$500以上
-    const highValueItems = items365
-      .filter((i) => !seen.has(i.itemId) && parseFloat(i.sellingStatus.currentPrice.value) >= 500)
-      .slice(0, 3);
-    highValueItems.forEach((item) => { seen.add(item.itemId); results.push(toResult(item, "high-value", 1, 365)); });
-
-    return NextResponse.json({ results, counts: { total: results.length, items30: items30.length, items90: items90.length, items365: items365.length } });
+    return NextResponse.json({ results, total: items.length });
   } catch (err) {
-    console.error(err);
-    return NextResponse.json({ error: "eBay API request failed" }, { status: 500 });
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("Research API error:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
