@@ -6,8 +6,8 @@ let cachedToken: { token: string; expiry: number } | null = null;
 async function getAccessToken(): Promise<string> {
   if (cachedToken && Date.now() < cachedToken.expiry) return cachedToken.token;
 
-  const appId = process.env.EBAY_APP_ID!;
-  const certId = process.env.EBAY_CERT_ID!;
+  const appId = process.env.EBAY_APP_ID!.trim();
+  const certId = process.env.EBAY_CERT_ID!.trim();
   const credentials = Buffer.from(`${appId}:${certId}`).toString("base64");
 
   const res = await fetch(OAUTH_URL, {
