@@ -1,9 +1,17 @@
-import { NextRequest, NextResponse } from "next/server";
-import { fetchItemsByKeyword, EbayCompletedItem } from "@/lib/ebay";
-import { ResearchResult, ProductPattern } from "@/types";
-import { extractModelQuery } from "@/lib/utils";
+// Cloudflare Workers エントリポイント。
+// 元 src/app/api/research/route.ts のロジックをそのまま移植し、
+// それ以外のリクエストは静的エクスポート済みアセット（./out）へフォールバックする。
+import { fetchItemsByKeyword, type EbayCompletedItem } from "./src/lib/ebay";
+import { extractModelQuery } from "./src/lib/utils";
+import type { ResearchResult, ProductPattern } from "./src/types";
 
 const EXCHANGE_RATE = 150;
+
+interface Env {
+  ASSETS: { fetch: (request: Request) => Promise<Response> };
+  EBAY_APP_ID?: string;
+  EBAY_CERT_ID?: string;
+}
 
 function calcProfit(ebayPriceUSD: number, sourcePriceJPY: number) {
   const sourcePriceUSD = sourcePriceJPY / EXCHANGE_RATE;
@@ -53,9 +61,16 @@ function toResult(item: EbayCompletedItem, pattern: ProductPattern, soldCount: n
   };
 }
 
-export async function GET(req: NextRequest) {
-  const keyword = req.nextUrl.searchParams.get("keyword") ?? "";
-  if (!keyword) return NextResponse.json({ error: "keyword required" }, { status: 400 });
+function json(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+async function handleResearch(request: Request): Promise<Response> {
+  const keyword = new URL(request.url).searchParams.get("keyword") ?? "";
+  if (!keyword) return json({ error: "keyword required" }, 400);
 
   try {
     const allItems = await fetchItemsByKeyword(keyword);
@@ -86,10 +101,31 @@ export async function GET(req: NextRequest) {
       results.push(toResult(item, "standard", 2, 90));
     });
 
-    return NextResponse.json({ results, total: items.length });
+    return json({ results, total: items.length });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     console.error("Research API error:", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return json({ error: message }, 500);
   }
 }
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+
+    if (url.pathname === "/api/research") {
+      // src/lib/ebay.ts は process.env.EBAY_APP_ID / EBAY_CERT_ID を参照するため、
+      // Workerのsecretsをprocess.envへブリッジする。
+      const g = globalThis as unknown as { process?: { env: Record<string, string> } };
+      if (!g.process) g.process = { env: {} };
+      if (!g.process.env) g.process.env = {};
+      for (const [key, value] of Object.entries(env)) {
+        if (typeof value === "string") g.process.env[key] = value;
+      }
+
+      return handleResearch(request);
+    }
+
+    return env.ASSETS.fetch(request);
+  },
+};
