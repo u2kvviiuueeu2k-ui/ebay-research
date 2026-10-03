@@ -1,4 +1,4 @@
-export type ProductPattern = "high-rotation" | "standard" | "high-value";
+export type ProductPattern = "standard" | "high-value";
 
 export interface EbayProduct {
   id: string;
@@ -6,8 +6,6 @@ export interface EbayProduct {
   imageUrl: string;
   ebayPrice: number;
   currency: string;
-  soldCount: number;
-  soldPeriodDays: number;
   ebayUrl: string;
   pattern: ProductPattern;
   category: string;
@@ -16,23 +14,34 @@ export interface EbayProduct {
 export interface SourceItem {
   platform: "mercari" | "yahoo-auction" | "amazon";
   title: string;
-  price: number;
   url: string;
-  imageUrl: string;
-}
-
-export interface ProfitCalculation {
-  ebayPrice: number;
-  sourcePrice: number;
-  ebayFeeRate: number;
-  ebayFee: number;
-  shippingCost: number;
-  profit: number;
-  profitRate: number;
 }
 
 export interface ResearchResult {
   product: EbayProduct;
   sources: SourceItem[];
-  bestProfit: ProfitCalculation | null;
 }
+
+// 1商品ごとに人（または将来の取得元）が埋める入力。空文字＝未入力。
+// 販売実績の出どころ（Terapeak・Marketplace Insights・CSV等）は問わず、この形に入れる。
+export interface ItemInput {
+  sourceJPY: string;
+  weightKg: string;
+  lengthCm: string;
+  widthCm: string;
+  heightCm: string;
+  shippingJPY: string; // 入力があれば重量計算より優先
+  sold90d: string;
+  sellers: string; // 日本発送の競合セラー数
+}
+
+export const EMPTY_INPUT: ItemInput = {
+  sourceJPY: "",
+  weightKg: "",
+  lengthCm: "",
+  widthCm: "",
+  heightCm: "",
+  shippingJPY: "",
+  sold90d: "",
+  sellers: "",
+};

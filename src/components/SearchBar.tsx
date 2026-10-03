@@ -1,32 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { ProductPattern } from "@/types";
 
 interface SearchBarProps {
-  onSearch: (keyword: string, patterns: ProductPattern[]) => void;
+  onSearch: (keyword: string) => void;
   loading: boolean;
 }
 
-const PATTERNS: { value: ProductPattern; label: string }[] = [
-  { value: "high-rotation", label: "高回転（30日5〜7個）" },
-  { value: "standard", label: "定番（90日1〜2個）" },
-  { value: "high-value", label: "高額（1年1個以上）" },
-];
-
 export default function SearchBar({ onSearch, loading }: SearchBarProps) {
   const [keyword, setKeyword] = useState("");
-  const [selected, setSelected] = useState<ProductPattern[]>(["high-rotation", "standard", "high-value"]);
-
-  function togglePattern(p: ProductPattern) {
-    setSelected((prev) =>
-      prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]
-    );
-  }
-
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (keyword.trim()) onSearch(keyword.trim(), selected);
+    if (keyword.trim()) onSearch(keyword.trim());
   }
 
   return (
@@ -46,19 +31,6 @@ export default function SearchBar({ onSearch, loading }: SearchBarProps) {
         >
           {loading ? "検索中..." : "リサーチ"}
         </button>
-      </div>
-      <div className="flex gap-3 flex-wrap">
-        {PATTERNS.map((p) => (
-          <label key={p.value} className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={selected.includes(p.value)}
-              onChange={() => togglePattern(p.value)}
-              className="rounded text-blue-600"
-            />
-            <span className="text-sm text-gray-600">{p.label}</span>
-          </label>
-        ))}
       </div>
     </form>
   );
