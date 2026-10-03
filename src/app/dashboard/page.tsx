@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import SearchBar from "@/components/SearchBar";
 import ProductCard from "@/components/ProductCard";
 import SettingsPanel from "@/components/SettingsPanel";
+import ImportPanel from "@/components/ImportPanel";
+import type { SoldImport } from "@/lib/import";
 import { EMPTY_INPUT, ItemInput, ProductPattern, ResearchResult } from "@/types";
 import { PATTERN_LABELS } from "@/lib/mock-data";
 import { DEFAULT_SETTINGS, ProfitSettings, evaluate, num } from "@/lib/profit";
@@ -58,6 +60,17 @@ export default function DashboardPage() {
     const all = { ...inputs, [id]: next };
     setInputs(all);
     save(INPUTS_KEY, all);
+  }
+
+  function handleImport(data: SoldImport) {
+    // 入力済みの値は残し、未入力の商品だけ取り込んだ販売数で初期化する
+    const merged = { ...data.inputs, ...inputs };
+    setInputs(merged);
+    save(INPUTS_KEY, merged);
+    setResults(data.results);
+    setError(null);
+    setSearched(true);
+    setActivePattern("all");
   }
 
   async function handleSearch(keyword: string) {
@@ -128,6 +141,7 @@ export default function DashboardPage() {
 
       <main className="max-w-4xl mx-auto px-6 py-8 flex flex-col gap-6">
         <SearchBar onSearch={handleSearch} loading={loading} />
+        <ImportPanel onImport={handleImport} />
         <SettingsPanel settings={settings} onChange={updateSettings} />
 
         {error && (
